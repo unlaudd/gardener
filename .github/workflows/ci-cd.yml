@@ -106,6 +106,10 @@ jobs:
           cache: 'npm'
           cache-dependency-path: gardener/frontend/package-lock.json
 
+      # Установка зависимостей перед сборкой
+      - name: Install frontend dependencies
+        run: cd gardener/frontend && npm ci
+
       # Запуск GoReleaser: кросс-компиляция, упаковка в архивы, публикация.
       # Флаг --clean удаляет артефакты предыдущих сборок.
       # Переменная GITHUB_TOKEN автоматически инжектируется GitHub Actions

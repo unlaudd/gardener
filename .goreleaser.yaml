@@ -53,7 +53,7 @@ builds:
       # Pre-build hook: Compile frontend assets before Go compilation.
       # This ensures the embedded //go:embed directive includes fresh assets.
       # Command runs in the context of the `dir` directory (gardener/).
-      pre: make -f gardener/Makefile frontend-build
+      pre: cd gardener && make frontend-build
 
 # -----------------------------------------------------------------------------
 # Archive Packaging Configuration
