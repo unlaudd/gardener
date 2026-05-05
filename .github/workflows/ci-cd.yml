@@ -1,0 +1,120 @@
+# =============================================================================
+# 🌱 Огородник — CI/CD Pipeline Configuration
+# =============================================================================
+# Автоматизированный пайплайн для валидации кода, запуска тестов и публикации
+# релизов. Использует GitHub Actions и GoReleaser.
+#
+# Структура пайплайна:
+#   1. ci: Запускается при каждом push/PR в main/master. Проверяет линтеры и тесты.
+#   2. release: Запускается только при push тега v*. Собирает кроссплатформенные
+#      бинарники, формирует changelog и публикует релиз в GitHub Releases.
+#
+# Справка: https://docs.github.com/en/actions
+# =============================================================================
+
+# Отображаемое имя воркфлоу в интерфейсе GitHub Actions.
+name: CI/CD Pipeline
+
+# Триггеры запуска пайплайна.
+on:
+  push:
+    # Запуск CI при коммитах в основные ветки разработки.
+    branches: [main, master]
+    # Запуск релизного пайплайна при публикации версионных тегов.
+    tags: ['v*']
+  pull_request:
+    # Запуск CI валидации для всех PR, нацеленных на основные ветки.
+    branches: [main, master]
+
+# Права доступа, выдаваемые воркфлоу.
+# contents: write необходимо для создания и публикации GitHub Releases.
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job: Continuous Integration (CI)
+  # ---------------------------------------------------------------------------
+  # Валидация качества кода и запуск тестов. Выступает в роли шлюза:
+  # если CI падает, релизный job не запускается.
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      # Клонирование репозитория с полной историей коммитов.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Настройка окружения Go. Версия 1.22 обеспечивает стабильную работу
+      # модулей и поддержку современных языковых конструкций.
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+
+      # Настройка окружения Node.js для сборки и линтинга фронтенда.
+      # Версия 20 — активный LTS-релиз с полной поддержкой Vite/Svelte.
+      # Кэш npm ускоряет установку зависимостей между запусками пайплайна.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: gardener/frontend/package-lock.json
+
+      # Установка зависимостей Go и фронтенда через Makefile.
+      # Гарантирует идентичную резолюцию пакетов в CI и локальной среде.
+      - name: Install dependencies
+        run: cd gardener && make install-deps
+
+      # Запуск статического анализа и проверки форматирования кода.
+      # Пайплайн прерывается при нарушении правил линтера.
+      - name: Run linters
+        run: cd gardener && make lint
+
+      # Запуск юнит-тестов с детектором гонок данных и отчётом покрытия.
+      # Пайплайн прерывается при падении хотя бы одного теста.
+      - name: Run tests
+        run: cd gardener && make test
+
+  # ---------------------------------------------------------------------------
+  # Job: Continuous Delivery / Release
+  # ---------------------------------------------------------------------------
+  # Сборка, упаковка и публикация релиза. Запускается строго после успешного CI
+  # и только при наличии тега, соответствующего паттерну v*.
+  release:
+    needs: ci
+    # Условие выполнения: срабатывает только на тегах вида refs/tags/v*
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      # Клонирование с полной историей (fetch-depth: 0).
+      # Обязательно для корректного вычисления версии и генерации changelog
+      # на основе истории коммитов между текущим и предыдущим тегом.
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      # Повторная инициализация окружения Go для этапа сборки.
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with: { go-version: '1.22' }
+
+      # Повторная инициализация окружения Node.js для компиляции фронтенда.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: gardener/frontend/package-lock.json
+
+      # Запуск GoReleaser: кросс-компиляция, упаковка в архивы, публикация.
+      # Флаг --clean удаляет артефакты предыдущих сборок.
+      # Переменная GITHUB_TOKEN автоматически инжектируется GitHub Actions
+      # и предоставляет права на создание релизов в текущем репозитории.
+      - name: Build and publish release via GoReleaser
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

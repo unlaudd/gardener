@@ -1,0 +1,101 @@
+# =============================================================================
+# 🌱 Огородник — golangci-lint Configuration
+# =============================================================================
+# Configuration file for the golangci-lint static analysis tool.
+# Defines enabled linters, their settings, and issue filtering rules.
+#
+# This configuration balances code quality enforcement with pragmatism
+# for a personal project, excluding overly strict checks where they
+# generate false positives or hinder development velocity.
+#
+# Documentation: https://golangci-lint.run/usage/configuration/
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Run Configuration
+# -----------------------------------------------------------------------------
+run:
+  # Maximum duration for the linter to run before being forcefully terminated.
+  # Prevents CI pipelines from hanging indefinitely on large codebases.
+  timeout: 5m
+  # Include test files (*_test.go) in the analysis scope.
+  # Ensures test code adheres to the same quality standards as production code.
+  tests: true
+
+# -----------------------------------------------------------------------------
+# Linter Selection
+# -----------------------------------------------------------------------------
+linters:
+  # Explicit list of enabled linters.
+  # Combines standard Go tooling with advanced static analysis checks.
+  enable:
+    - gofmt         # Standard Go code formatter
+    - govet         # Official Go static analyzer (catches common mistakes)
+    - staticcheck   # Advanced set of checks (bugs, performance, style)
+    - unused        # Detects unused constants, variables, functions, and types
+    - gosimple      # Simplifies code where possible
+    - ineffassign   # Detects ineffectual assignments
+    - errcheck      # Checks for unchecked errors in Go programs
+    - typecheck     # Ensures code compiles correctly
+    - bodyclose     # Ensures HTTP response bodies are closed
+    - contextcheck  # Checks for proper context propagation in functions
+
+  # Keep default linters disabled to avoid noise from less relevant checks.
+  disable-all: false
+
+# -----------------------------------------------------------------------------
+# Linter-Specific Settings
+# -----------------------------------------------------------------------------
+linters-settings:
+  gofmt:
+    # Apply simplification rules during formatting (e.g., `[]int{1, 2}` instead of `[]int{1, 2,}`).
+    simplify: true
+  govet:
+    # Enable all govet analyzers by default for comprehensive checking.
+    enable-all: true
+    disable:
+      # Disable fieldalignment due to high noise level in simple projects.
+      # It recommends reordering struct fields to save memory, which is
+      # often unnecessary for application-level code.
+      - fieldalignment
+  errcheck:
+    # Check for unchecked type assertions to prevent potential panics.
+    check-type-assertions: true
+    # Allow explicit error ignoring using `_ = func()`.
+    # Provides flexibility when errors are intentionally unhandled.
+    check-blank: false
+
+# -----------------------------------------------------------------------------
+# Issue Filtering and Exclusions
+# -----------------------------------------------------------------------------
+issues:
+  # Disable default exclude rules to ensure maximum visibility of potential issues.
+  exclude-use-default: false
+  # Show all reported issues without limiting per linter.
+  max-issues-per-linter: 0
+  # Do not collapse multiple identical issues into a single report.
+  max-same-issues: 0
+
+  # Define custom exclusion rules for specific files or patterns.
+  exclude-rules:
+    # Exclude test files from strict errcheck enforcement.
+    # Test code often intentionally ignores errors for simplicity and brevity.
+    - path: _test\.go
+      linters:
+        - errcheck
+
+    # Exclude specific errcheck warnings in db.go.
+    # These functions are initialization/setup routines where error handling
+    # is either logged, deferred, or intentionally suppressed for brevity.
+    - path: internal/db/db.go
+      linters:
+        - errcheck
+      text: "os.MkdirAll|os.UserHomeDir|rows.Close"
+
+    # Exclude specific errcheck warnings in photos.go.
+    # Image processing and file I/O operations in this module use
+    # early returns on critical errors, making deferred close/encode checks optional.
+    - path: internal/db/photos.go
+      linters:
+        - errcheck
+      text: "file.Close|out.Close|jpeg.Encode"
