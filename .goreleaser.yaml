@@ -1,33 +1,96 @@
 # =============================================================================
-# 🌱 Огородник — GoReleaser Configuration (FIXED)
+# 🌱 Gardener — GoReleaser Configuration
 # =============================================================================
+# Configuration for automated release builds and publication.
+#
+# GoReleaser performs the following steps during a release:
+#   1. Executes pre-build hooks (frontend compilation)
+#   2. Cross-compiles the Go binary for target OS/architecture combinations
+#   3. Packages binaries into compressed archives with consistent naming
+#   4. Generates a CHANGELOG from Git commit history between tags
+#   5. Publishes release artifacts to GitHub Releases
+#
+# Trigger: Executed via GitHub Actions when a Git tag matching 'v*' is pushed.
+# Documentation: https://goreleaser.com/customization/
+# =============================================================================
+
+# Project identifier used in archive filenames and release metadata.
+# Must be a single word in lowercase without spaces.
 project_name: gardener
 
-# ✅ Глобальный хук: запускается ПЕРЕД сборками, из корня репозитория.
-# Это надежное место для сборки фронтенда, который потом встроится в бинарник.
+# -----------------------------------------------------------------------------
+# Before Hooks: Pre-build Preparation
+# -----------------------------------------------------------------------------
+# Commands executed once before all builds start.
+# Working directory: repository root (where .goreleaser.yaml is located).
+# Ideal for building dependencies (e.g., frontend assets) before Go compilation.
 before:
   hooks:
-    # make -C gardener: перейти в папку с проектом и запустить цель
+    # Compile frontend assets and embed them into the Go binary.
+    # Command: make -C gardener frontend-build
+    #   -C gardener: Changes directory to 'gardener/' before reading Makefile.
+    #   frontend-build: Make target that runs 'npm run build' via Vite.
+    # Result: Creates 'gardener/frontend/dist/' which is embedded via //go:embed.
+    # Failure: If this hook fails, the entire release pipeline is aborted.
     - make -C gardener frontend-build
 
+# -----------------------------------------------------------------------------
+# Builds: Cross-Compilation Configuration
+# -----------------------------------------------------------------------------
+# Defines how the Go binary is compiled for each target platform.
 builds:
-  - dir: gardener
-    main: .
-    env: [CGO_ENABLED=0]
-    goos: [linux, windows, darwin]
-    goarch: [amd64, arm64]
-    # ✅ Убрали hooks отсюда — фронтенд уже собран в секции before
+  - # Path to the Go module directory relative to the repository root.
+    dir: gardener
 
+    # Path to the main package relative to 'dir'.
+    # "." refers to the root of the specified directory.
+    main: .
+
+    # Environment variables for the 'go build' process.
+    # CGO_ENABLED=0 forces static linking, ensuring maximum portability.
+    env: [CGO_ENABLED=0]
+
+    # Target operating systems for cross-compilation.
+    goos: [linux, windows, darwin]
+
+    # Target CPU architectures.
+    # amd64: 64-bit x86 (desktops/servers)
+    # arm64: 64-bit ARM (Apple Silicon, Raspberry Pi, cloud instances)
+    goarch: [amd64, arm64]
+
+    # Note: Build hooks (pre/post) are intentionally omitted here.
+    # Frontend is built globally in the 'before' section to avoid
+    # redundant executions and directory context ambiguity.
+
+# -----------------------------------------------------------------------------
+# Archives: Artifact Packaging
+# -----------------------------------------------------------------------------
+# Defines how compiled binaries are compressed for distribution.
 archives:
-  - format: tar.gz
+  - # Archive format for most platforms (Linux, macOS).
+    format: tar.gz
+
+    # Filename template using Go template syntax.
+    # Variables: .ProjectName, .Version, .Os, .Arch
+    # Example output: gardener_1.0.0_linux_amd64.tar.gz
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+    # Platform-specific format overrides.
     format_overrides:
       - goos: windows
+        # Windows users expect .zip archives for native compatibility.
         format: zip
 
+# -----------------------------------------------------------------------------
+# Changelog: Release Notes Generation
+# -----------------------------------------------------------------------------
+# Configures automatic CHANGELOG generation from Git commit history.
 changelog:
+  # Sort order: "asc" (oldest first) or "desc" (newest first).
   sort: asc
+
+  # Filters to exclude non-user-facing commits from the changelog.
   filters:
     exclude:
       - '^docs:'
@@ -37,7 +100,22 @@ changelog:
       - Merge branch
       - '^Merge '
 
+# -----------------------------------------------------------------------------
+# Release: GitHub Publication Settings
+# -----------------------------------------------------------------------------
+# Configuration for publishing releases to GitHub.
 release:
+  # draft: If true, creates a draft release (not publicly visible).
   draft: false
+
+  # prerelease: Auto-detects pre-release versions from tag suffixes (-rc, -beta, etc.).
   prerelease: auto
+
+  # mode: Strategy for handling existing releases with the same tag.
+  # "replace" deletes the old release and creates a new one (idempotent for CI).
   mode: replace
+
+  # Note: The 'github: owner/name' block is intentionally omitted.
+  # GoReleaser automatically detects the repository from 'git remote get-url origin'.
+  # This prevents path duplication issues (e.g., unlaudd/unlaudd/gardener) and
+  # makes the configuration portable across forks without manual edits.
