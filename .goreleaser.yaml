@@ -1,139 +1,46 @@
 # =============================================================================
-# 🌱 Огородник — GoReleaser Configuration
+# 🌱 Огородник — GoReleaser Configuration (FIXED)
 # =============================================================================
-# This file configures automated release builds for the Gardener application.
-#
-# GoReleaser performs the following during a release:
-#   1. Cross-compiles the Go binary for multiple OS/architecture combinations
-#   2. Embeds the pre-built frontend assets into each binary
-#   3. Packages binaries into compressed archives with consistent naming
-#   4. Generates a CHANGELOG from Git commit history between tags
-#   5. Publishes release artifacts to GitHub Releases
-#
-# Trigger: This configuration is executed by GitHub Actions when a Git tag
-# matching the pattern `v*` is pushed (e.g., `v1.0.0`, `v2.1.3-rc1`).
-#
-# Documentation: https://goreleaser.com/customization/
-# =============================================================================
-
-# Project name used in archive filenames and release metadata.
-# This value is referenced by the `name_template` in the archives section.
 project_name: gardener
 
-# -----------------------------------------------------------------------------
-# Build Configuration
-# -----------------------------------------------------------------------------
-# Defines how the Go binary is compiled for each target platform.
-# Multiple builds can be specified for different entry points or configurations.
+# ✅ Глобальный хук: запускается ПЕРЕД сборками, из корня репозитория.
+# Это надежное место для сборки фронтенда, который потом встроится в бинарник.
+before:
+  hooks:
+    # make -C gardener: перейти в папку с проектом и запустить цель
+    - make -C gardener frontend-build
+
 builds:
-  - # Path to the Go module directory containing main.go.
-    # Relative to the repository root where GoReleaser is executed.
-    dir: gardener
-
-    # Path to the main package entry point (relative to `dir`).
-    # "." indicates the root of the specified directory.
+  - dir: gardener
     main: .
-
-    # Environment variables set during the Go build process.
-    # CGO_ENABLED=0 produces fully static binaries with no C dependencies,
-    # ensuring maximum portability across target systems.
     env: [CGO_ENABLED=0]
-
-    # Target operating systems for cross-compilation.
-    # Supported values: linux, windows, darwin (macOS), freebsd, etc.
     goos: [linux, windows, darwin]
-
-    # Target CPU architectures for each OS.
-    # amd64: 64-bit x86 (most desktops/servers)
-    # arm64: 64-bit ARM (Apple Silicon, Raspberry Pi 4+, modern servers)
     goarch: [amd64, arm64]
+    # ✅ Убрали hooks отсюда — фронтенд уже собран в секции before
 
-    # Hooks execute shell commands at specific points in the build lifecycle.
-    hooks:
-      # Pre-build hook: Compile frontend assets before Go compilation.
-      # This ensures the embedded //go:embed directive includes fresh assets.
-      # Command runs in the context of the `dir` directory (gardener/).
-      pre: sh -c 'echo "HOOK PWD: $(pwd)" && make -C gardener frontend-build'
-
-# -----------------------------------------------------------------------------
-# Archive Packaging Configuration
-# -----------------------------------------------------------------------------
-# Defines how compiled binaries are packaged for distribution.
-# Each entry produces a separate archive format per platform.
 archives:
-  - # Archive format for most platforms (Linux, macOS).
-    # Supported: tar.gz, zip, binary (no archive), etc.
-    format: tar.gz
-
-    # Template for generated archive filenames.
-    # Variables are Go template expressions evaluated by GoReleaser:
-    #   {{ .ProjectName }}: Value of project_name field ("gardener")
-    #   {{ .Version }}: Git tag without "v" prefix (e.g., "1.0.0")
-    #   {{ .Os }}: Target OS name (linux, windows, darwin)
-    #   {{ .Arch }}: Target architecture (amd64, arm64)
-    #
-    # Example output: gardener_1.0.0_linux_amd64.tar.gz
+  - format: tar.gz
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
-
-    # Platform-specific format overrides.
-    # Windows users expect .zip archives; this override ensures compatibility.
     format_overrides:
-      - # Apply this override when building for Windows.
-        goos: windows
-        # Use ZIP format instead of tar.gz for Windows builds.
+      - goos: windows
         format: zip
 
-# -----------------------------------------------------------------------------
-# Changelog Generation Configuration
-# -----------------------------------------------------------------------------
-# Controls how GoReleaser generates the CHANGELOG content for GitHub Releases.
-# Changelog is built from Git commit messages between the current and previous tag.
 changelog:
-  # Sort order for commit entries in the changelog.
-  # "asc" = oldest first (chronological), "desc" = newest first.
   sort: asc
-
-  # Filters exclude certain commits from appearing in the changelog.
-  # Each pattern is a regular expression matched against commit subject lines.
   filters:
     exclude:
-      # Exclude conventional commit prefixes for maintenance tasks.
-      # These commits are important for development but not user-facing.
-      - '^docs:'       # Documentation updates
-      - '^ci:'         # CI/CD pipeline changes
-      - '^test:'       # Test additions or modifications
-
-      # Exclude automated merge commits that add noise to the changelog.
+      - '^docs:'
+      - '^ci:'
+      - '^test:'
       - Merge pull request
       - Merge branch
       - '^Merge '
 
-# -----------------------------------------------------------------------------
-# GitHub Release Publishing Configuration
-# -----------------------------------------------------------------------------
-# Settings for creating and publishing releases on GitHub.
-# Requires GITHUB_TOKEN environment variable with repo scope permissions.
 release:
-  # GitHub repository identification using environment variables.
-  # These variables are automatically set by GitHub Actions:
-  #   GITHUB_REPOSITORY_OWNER: Organization or user name (e.g., "myorg")
-  #   GITHUB_REPOSITORY: Full repo path (e.g., "myorg/gardener")
   github:
     owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
     name: "{{ .Env.GITHUB_REPOSITORY }}"
-
-  # Draft mode: If true, release is created as a draft (not publicly visible).
-  # Set to false for automatic public publication upon successful build.
   draft: false
-
-  # Prerelease detection: Automatically mark releases as prerelease
-  # if the version tag contains prerelease identifiers (e.g., -rc1, -beta, -alpha).
-  # Values: true (always prerelease), false (never), auto (detect from tag).
   prerelease: auto
-
-  # Mode for handling existing releases with the same tag.
-  # "replace": Delete existing release and create new one (idempotent for CI retries).
-  # "append": Keep existing release and add new artifacts (not recommended for CI).
-  # "fail": Abort if release already exists (prevents accidental overwrites).
   mode: replace
